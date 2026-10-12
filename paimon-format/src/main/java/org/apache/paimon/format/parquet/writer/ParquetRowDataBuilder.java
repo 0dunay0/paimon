@@ -40,13 +40,23 @@ public class ParquetRowDataBuilder
         extends ParquetWriter.Builder<InternalRow, ParquetRowDataBuilder> {
 
     private final RowType rowType;
+    private final boolean localZonedTimestampMillisAsMicros;
     @Nullable private final RowType shreddingSchemas;
 
     public ParquetRowDataBuilder(
             OutputFile path, RowType rowType, @Nullable RowType shreddingSchemas) {
+        this(path, rowType, shreddingSchemas, false);
+    }
+
+    public ParquetRowDataBuilder(
+            OutputFile path,
+            RowType rowType,
+            @Nullable RowType shreddingSchemas,
+            boolean localZonedTimestampMillisAsMicros) {
         super(path);
         this.rowType = rowType;
         this.shreddingSchemas = shreddingSchemas;
+        this.localZonedTimestampMillisAsMicros = localZonedTimestampMillisAsMicros;
     }
 
     @Override
@@ -70,7 +80,8 @@ public class ParquetRowDataBuilder
             this.conf = conf;
             this.schema =
                     convertToParquetMessageType(
-                            VariantUtils.replaceWithShreddingType(rowType, shreddingSchemas));
+                            VariantUtils.replaceWithShreddingType(rowType, shreddingSchemas),
+                            localZonedTimestampMillisAsMicros);
         }
 
         @Override

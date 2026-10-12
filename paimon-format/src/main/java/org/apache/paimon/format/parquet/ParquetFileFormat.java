@@ -49,6 +49,7 @@ public class ParquetFileFormat extends FileFormat {
     private final FormatContext formatContext;
     private final Options options;
     private final int readBatchSize;
+    private final boolean localZonedTimestampMillisAsMicros;
 
     public ParquetFileFormat(FormatContext formatContext) {
         super(IDENTIFIER);
@@ -56,6 +57,12 @@ public class ParquetFileFormat extends FileFormat {
         this.formatContext = formatContext;
         this.options = getParquetConfiguration(formatContext);
         this.readBatchSize = formatContext.readBatchSize();
+        this.localZonedTimestampMillisAsMicros =
+                !"disabled"
+                        .equalsIgnoreCase(
+                                formatContext
+                                        .options()
+                                        .getString("metadata.iceberg.storage", "disabled"));
     }
 
     @VisibleForTesting
@@ -75,7 +82,9 @@ public class ParquetFileFormat extends FileFormat {
     @Override
     public FormatWriterFactory createWriterFactory(RowType type) {
         ParquetWriterFactory baseFactory =
-                new ParquetWriterFactory(new RowDataParquetBuilder(type, options));
+                new ParquetWriterFactory(
+                        new RowDataParquetBuilder(
+                                type, options, localZonedTimestampMillisAsMicros));
         // Wrap with variant inference decorator
         return new VariantInferenceWriterFactory(
                 baseFactory, new VariantInferenceConfig(type, formatContext.options()));
@@ -83,7 +92,8 @@ public class ParquetFileFormat extends FileFormat {
 
     @Override
     public void validateDataFields(RowType rowType) {
-        ParquetSchemaConverter.convertToParquetMessageType(rowType);
+        ParquetSchemaConverter.convertToParquetMessageType(
+                rowType, localZonedTimestampMillisAsMicros);
     }
 
     @Override

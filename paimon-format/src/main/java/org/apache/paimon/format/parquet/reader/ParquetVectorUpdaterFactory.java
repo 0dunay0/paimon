@@ -83,6 +83,20 @@ public class ParquetVectorUpdaterFactory {
         return paimonType.accept(UpdaterFactoryVisitor.INSTANCE).apply(descriptor);
     }
 
+    private static int timestampPrecision(ColumnDescriptor descriptor, int defaultPrecision) {
+        LogicalTypeAnnotation annotation = descriptor.getPrimitiveType().getLogicalTypeAnnotation();
+        if (annotation instanceof LogicalTypeAnnotation.TimestampLogicalTypeAnnotation) {
+            LogicalTypeAnnotation.TimeUnit unit =
+                    ((LogicalTypeAnnotation.TimestampLogicalTypeAnnotation) annotation).getUnit();
+            if (unit == LogicalTypeAnnotation.TimeUnit.MILLIS) {
+                return 3;
+            } else if (unit == LogicalTypeAnnotation.TimeUnit.MICROS) {
+                return 6;
+            }
+        }
+        return defaultPrecision;
+    }
+
     interface UpdaterFactory extends Function<ColumnDescriptor, ParquetVectorUpdater> {}
 
     private static class UpdaterFactoryVisitor implements DataTypeVisitor<UpdaterFactory> {
@@ -190,7 +204,9 @@ public class ParquetVectorUpdaterFactory {
             return c -> {
                 if (c.getPrimitiveType().getPrimitiveTypeName()
                         == PrimitiveType.PrimitiveTypeName.INT64) {
-                    return new LongTimestampUpdater(timestampType.getPrecision());
+                    return new LongTimestampUpdater(
+                            timestampType.getPrecision(),
+                            timestampPrecision(c, timestampType.getPrecision()));
                 } else if (c.getPrimitiveType().getPrimitiveTypeName()
                         == PrimitiveType.PrimitiveTypeName.INT96) {
                     return new TimestampUpdater(timestampType.getPrecision());
@@ -206,7 +222,9 @@ public class ParquetVectorUpdaterFactory {
             return c -> {
                 if (c.getPrimitiveType().getPrimitiveTypeName()
                         == PrimitiveType.PrimitiveTypeName.INT64) {
-                    return new LongUpdater();
+                    return new LongTimestampUpdater(
+                            localZonedTimestampType.getPrecision(),
+                            timestampPrecision(c, localZonedTimestampType.getPrecision()));
                 }
                 return new TimestampUpdater(localZonedTimestampType.getPrecision());
             };
@@ -436,8 +454,11 @@ public class ParquetVectorUpdaterFactory {
 
     private static class LongTimestampUpdater extends AbstractTimestampUpdater {
 
-        public LongTimestampUpdater(int precision) {
+        private final int sourcePrecision;
+
+        public LongTimestampUpdater(int precision, int sourcePrecision) {
             super(precision);
+            this.sourcePrecision = sourcePrecision;
         }
 
         @Override
@@ -465,8 +486,17 @@ public class ParquetVectorUpdaterFactory {
         private void putTimestamp(WritableColumnVector vector, int offset, long timestamp) {
             if (vector instanceof WritableTimestampVector) {
                 ((WritableTimestampVector) vector)
-                        .setTimestamp(offset, Timestamp.fromEpochMillis(timestamp));
+                        .setTimestamp(
+                                offset,
+                                sourcePrecision <= 3
+                                        ? Timestamp.fromEpochMillis(timestamp)
+                                        : Timestamp.fromMicros(timestamp));
             } else {
+                if (precision <= 3 && sourcePrecision > 3) {
+                    timestamp /= 1000L;
+                } else if (precision > 3 && sourcePrecision <= 3) {
+                    timestamp *= 1000L;
+                }
                 ((WritableLongVector) vector).setLong(offset, timestamp);
             }
         }

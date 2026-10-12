@@ -40,10 +40,17 @@ public class RowDataParquetBuilder implements ParquetBuilder<InternalRow> {
 
     private final RowType rowType;
     private final Configuration conf;
+    private final boolean localZonedTimestampMillisAsMicros;
     @Nullable private RowType shreddingSchemas;
 
     public RowDataParquetBuilder(RowType rowType, Options options) {
+        this(rowType, options, false);
+    }
+
+    public RowDataParquetBuilder(
+            RowType rowType, Options options, boolean localZonedTimestampMillisAsMicros) {
         this.rowType = rowType;
+        this.localZonedTimestampMillisAsMicros = localZonedTimestampMillisAsMicros;
         this.conf = new Configuration(false);
         this.shreddingSchemas = VariantUtils.shreddingSchemasFromOptions(options);
         options.toMap().forEach(conf::set);
@@ -58,7 +65,11 @@ public class RowDataParquetBuilder implements ParquetBuilder<InternalRow> {
     public ParquetWriter<InternalRow> createWriter(OutputFile out, String compression)
             throws IOException {
         ParquetRowDataBuilder builder =
-                new ParquetRowDataBuilder(out, rowType, shreddingSchemas)
+                new ParquetRowDataBuilder(
+                                out,
+                                rowType,
+                                shreddingSchemas,
+                                localZonedTimestampMillisAsMicros)
                         .withConf(conf)
                         .withCompressionCodec(
                                 CompressionCodecName.fromConf(getCompression(compression)))
